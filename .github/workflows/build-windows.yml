@@ -1,0 +1,54 @@
+name: Build Windows EXE
+
+# Builds Pulse Horizon for Windows on GitHub's own Windows machines.
+# Nothing runs on your PC. A power cut cannot stop it.
+#
+# HISTORY OF WHAT WENT WRONG, SO IT DOES NOT COME BACK:
+#   1. "cargo install tauri-cli" compiled the CLI from source. Hours.
+#      -> the official action below ships the CLI prebuilt. Seconds.
+#   2. Cargo.toml used fat LTO + codegen-units = 1. That re-optimises every
+#      crate together and kills parallelism. Hours.
+#      -> the release profile is now just "strip = true".
+#   3. The upload looked in src-tauri/target/... but the project actually
+#      lives one folder deeper. The build worked and the uploader found
+#      nothing.
+#      -> the paths below use ** so they cannot miss, whatever the folder
+#         is called or how deep it sits.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Get the code
+        uses: actions/checkout@v4
+
+      - name: Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache the build
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "**/src-tauri -> target"
+
+      - name: Build the EXE
+        uses: tauri-apps/tauri-action@v0
+        timeout-minutes: 45
+
+      # Find it wherever it landed. ** matches any folder depth, so this
+      # works whether the project is at the root or nested.
+      - name: Upload the EXE
+        uses: actions/upload-artifact@v4
+        with:
+          name: pulse-horizon-windows
+          if-no-files-found: warn
+          path: |
+            **/target/release/*.exe
+            **/target/release/bundle/**/*.exe
+            **/target/release/bundle/**/*.msi
+            **/*.msi
